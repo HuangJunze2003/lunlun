@@ -1,0 +1,177 @@
+• 你现在的 test.py:21 同时做了 4 件事：
+
+  1. 读配置
+  2. 注册工具
+  3. 构造 agent
+  4. 运行入口
+
+  如果你后面要继续加工具、换模型、做多个 agent，这种写法会很快变乱。对你这个项目，比较合适的是拆成“配置 / 工具 / agent
+  工厂 / 入口”四层。
+
+  结构
+
+  agent_app/
+    __init__.py
+    settings.py
+    agent_factory.py
+    tools/
+        __init__.py
+        registry.py
+        code_tools.py
+        time_tools.py
+    prompts/
+        sys_prompt.md
+    skills/
+        folder1/
+            SKILL.md
+        folder2/
+            SKILL.md
+
+  entry.py
+  .env
+
+  职责划分
+
+  - settings.py: 只负责 dotenv 和环境变量
+  - tools/*.py: 每个文件一组工具，函数实现写这里
+  - tools/registry.py: 统一把所有工具注册到 Toolkit
+  - agent_factory.py: 只负责创建 ReActAgent
+  - test.py: 只保留运行入口
+
+  建议写法
+
+  agent_app/settings.py
+
+  import os
+  from dataclasses import dataclass
+  from pathlib import Path
+
+  from dotenv import load_dotenv
+
+
+  @dataclass(frozen=True)
+  class Settings:
+      api_key: str
+      model_name: str
+      base_url: str | None
+
+
+  def get_settings() -> Settings:
+      load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+      api_key = os.getenv("DASHSCOPE_API_KEY")
+      if not api_key:
+          raise RuntimeError("Missing DASHSCOPE_API_KEY")
+
+      return Settings(
+          api_key=api_key,
+          model_name=os.getenv("DASHSCOPE_MODEL", "qwen3.5-plus"),
+          base_url=os.getenv("DASHSCOPE_BASE_URL"),
+      )
+
+  agent_app/tools/code_tools.py
+
+  from agentscope.tool import Toolkit, execute_python_code
+
+
+  def register_code_tools(toolkit: Toolkit) -> None:
+      toolkit.register_tool_function(execute_python_code)
+
+  agent_app/tools/time_tools.py
+
+  from datetime import datetime
+  from zoneinfo import ZoneInfo
+
+  from agentscope.tool import ToolResponse
+  from agentscope.tool import Toolkit
+
+
+  def get_current_time(timezone: str = "Asia/Singapore") -> ToolResponse:
+      """Get current time in the given timezone.
+
+      Args:
+          timezone: IANA timezone name.
+      """
+      now = datetime.now(ZoneInfo(timezone)).isoformat()
+      return ToolResponse(content=[{"type": "text", "text": now}])
+
+
+  def register_time_tools(toolkit: Toolkit) -> None:
+      toolkit.register_tool_function(get_current_time)
+
+  agent_app/tools/registry.py
+
+  from agentscope.tool import Toolkit
+
+  from .code_tools import register_code_tools
+  from .time_tools import register_time_tools
+
+
+  def build_toolkit() -> Toolkit:
+      toolkit = Toolkit()
+      register_code_tools(toolkit)
+      register_time_tools(toolkit)
+      return toolkit
+
+  agent_app/agent_factory.py
+
+  from agentscope.agent import ReActAgent
+  from agentscope.formatter import OpenAIChatFormatter
+  from agentscope.memory import InMemoryMemory
+  from agentscope.model import OpenAIChatModel
+
+  from .settings import get_settings
+  from .tools.registry import build_toolkit
+
+
+  def build_agent() -> ReActAgent:
+      settings = get_settings()
+      client_kwargs = {"base_url": settings.base_url} if settings.base_url else None
+
+      return ReActAgent(
+          name="Jarvis",
+          sys_prompt="You're a helpful assistant named Jarvis.",
+          model=OpenAIChatModel(
+              model_name=settings.model_name,
+              api_key=settings.api_key,
+              stream=True,
+              client_kwargs=client_kwargs,
+              generate_kwargs={"temperature": 0},
+          ),
+          formatter=OpenAIChatFormatter(),
+          toolkit=build_toolkit(),
+          memory=InMemoryMemory(),
+      )
+
+  test.py
+
+  import asyncio
+
+  from agentscope.message import Msg
+
+  from agent_app.agent_factory import build_agent
+
+
+  async def main() -> None:
+      agent = build_agent()
+      await agent(Msg(name="user", content="请调用 Python 工具并打印 Hello World。", role="user"))
+
+
+  if __name__ == "__main__":
+      asyncio.run(main())
+
+  这个结构的好处
+
+  - 新增工具时，只要加一个 tools/xxx_tools.py，然后在 registry.py 注册
+  - 换模型或改 .env 变量名，只动 settings.py / agent_factory.py
+  - 主入口始终很干净
+  - 后面做多个 agent 时，可以继续加 agent_factory_xxx.py 或 agents/ 目录
+
+  一个实用约束
+
+  - 工具实现放 tools/*.py
+  - 工具注册只放 tools/registry.py
+  - 不要在 test.py 里直接 register_tool_function(...)
+  - 每个工具函数都写清楚类型标注和 docstring，因为 AgentScope 会用它生成工具 schema
+
+  如果你要，我可以直接按这个结构帮你把当前项目重构掉。
