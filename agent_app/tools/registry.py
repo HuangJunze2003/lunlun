@@ -6,6 +6,7 @@ from agent_app.tools.get_current_time import register_current_time_tools
 from agent_app.tools.get_weather_tools import register_get_weather_tools
 from agent_app.tools.file_tools import register_file_tools
 from agent_app.tools.image_gen_tool import register_image_tools
+from agent_app.tools.search_paper_rag import register_search_paper_rag_tools
 
 
 def build_toolkit() -> Toolkit:
@@ -15,6 +16,7 @@ def build_toolkit() -> Toolkit:
     register_get_weather_tools(toolkit)
     register_file_tools(toolkit)
     register_image_tools(toolkit)
+    register_search_paper_rag_tools(toolkit)
 
     base_dir = Path(__file__).resolve().parents[2]
     # 技能1

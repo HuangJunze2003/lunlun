@@ -21,6 +21,7 @@
 - `get_current_time`：获取当前机器时间
 - `get_weather`：查询天气信息
 - `generate_image_tool`：根据文本提示词生成图片，或基于上传图片进行改写
+- `search_paper_rag`：调用远程 Academic Retriever 服务，检索顶会论文片段供写作对标与润色参考
 
 ## 技术栈
 
@@ -34,13 +35,13 @@
 
 ### 1. 准备环境
 
-建议使用 Python `3.12`。
+建议使用 Python `3.12` ,推荐使用 `uv` 进行环境管理
 
 如果你是第一次在新环境中启动这个项目，可以先创建虚拟环境：
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+```bash
+uv venv --python 3.12 --seed --managed-python
+source .venv/bin/activate
 ```
 
 ### 2. 安装依赖
@@ -49,8 +50,8 @@ python -m venv .venv
 
 稳妥做法是直接安装运行所需依赖：
 
-```powershell
-pip install fastapi python-dotenv requests uvicorn chainlit agentscope
+```bash
+uv pip install fastapi python-dotenv requests uvicorn chainlit agentscope
 ```
 
 如果你已经有可用的 `.venv`，直接激活后继续即可。
@@ -75,18 +76,15 @@ FASTAI_IMAGE_TIMEOUT_SECONDS=600
 - `FASTAI_API_KEY`：图片生成能力必填，用于调用 `fastai.group` 提供的 Gemini 图片接口
 - `FASTAI_IMAGE_TIMEOUT_SECONDS`：可选，默认 `600`，用于控制图片生成请求超时时间
 
+说明补充：
+- `search_paper_rag` 当前作为内部工具使用，服务地址固定写在 `agent_app/tools/search_paper_rag.py` 中。
+
 ### 4. 启动项目
 
 当前真正的前端入口是 `app.py`，推荐用 Chainlit 启动：
 
-```powershell
-chainlit run app.py -w
-```
-
-如果你的终端没有直接识别 `chainlit` 命令，可以使用虚拟环境里的可执行文件：
-
-```powershell
-.\.venv\Scripts\chainlit.exe run app.py -w
+```bash
+chainlit run app.py -h --host 0.0.0.0 --port 8000
 ```
 
 启动后你会看到一个 Chainlit Web 界面，默认欢迎语是“你好！我是论论，你的智能助手”。
@@ -143,6 +141,7 @@ chainlit run app.py -w
 | `agent_app/tools/get_current_time.py` | 提供当前时间工具。 |
 | `agent_app/tools/get_weather_tools.py` | 提供天气查询工具，当前通过 `wttr.in` 获取天气。 |
 | `agent_app/tools/image_gen_tool.py` | 提供图片生成与图片改写工具，调用外部图片接口并将结果落盘到 `output/`。 |
+| `agent_app/tools/search_paper_rag.py` | 提供论文片段检索工具，调用远程 Academic Retriever 服务返回顶会参考片段。 |
 | `agent_app/prompts/sys_prompt.md` | 定义“论论”的角色设定和输出要求。 |
 | `.chainlit/config.toml` | Chainlit 前端配置文件，当前已开启 LaTeX 渲染。 |
 | `chainlit.md` | Chainlit 的欢迎页文案。当前已被忽略，后续如果不想展示欢迎页，可以清空它。 |
@@ -161,7 +160,7 @@ chainlit run app.py -w
 2. `app.py` 从会话中取出已经创建好的 agent
 3. 如果消息里带有图片附件，`app.py` 会提取本地缓存路径并作为系统提示附加到用户输入
 4. agent 根据 `sys_prompt.md` 和用户输入生成响应
-5. 如有需要，agent 会通过 `toolkit` 调用工具，包括读取文件、生图或改图
+5. 如有需要，agent 会通过 `toolkit` 调用工具，包括读取文件、生图、改图或检索顶会论文片段
 6. 如果最终回复里包含 `[GEN_IMAGE: 路径]` 标记，前端会将对应图片解析并渲染出来
 7. Chainlit 先展示“思考中”步骤，再把最终文本流式输出到页面
 
@@ -194,12 +193,6 @@ chainlit run app.py -w
 - 为图片生成链路补充更完整的异常处理、重试和结果缓存策略
 
 ---
-
-如果你只是想快速跑起来，请记住最关键的一句：
-
-```powershell
-.\.venv\Scripts\chainlit.exe run app.py -w
-```
 
 如果你想继续扩展功能，优先看这几个位置：
 
